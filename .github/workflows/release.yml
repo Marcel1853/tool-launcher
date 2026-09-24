@@ -1,0 +1,106 @@
+# Baut bei jedem Push auf main den Launcher und legt in diesem Repo ein Release an –
+# aber nur, wenn es die Version aus package.json noch nicht gibt.
+# Release: Tag vX.Y.Z, Windows-Exe (portable) und Linux-AppImage, Text = Abschnitt
+# „## [X.Y.Z]“ aus CHANGELOG.md.
+#
+# Neue Version: Version in package.json hochzählen, Abschnitt im CHANGELOG.md
+# schreiben, auf main pushen. Eine Änderung nur an apps.json braucht keine neue
+# Version – die Liste liest der Launcher direkt aus main.
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  pruefen:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.info.outputs.version }}
+      neu: ${{ steps.gh.outputs.neu }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version lesen
+        id: info
+        run: echo "version=$(jq -r '.version' package.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Release prüfen
+        id: gh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "v${{ steps.info.outputs.version }}" >/dev/null 2>&1; then
+            echo "v${{ steps.info.outputs.version }} gibt es schon – nichts zu tun."
+            echo "neu=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "neu=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  bauen:
+    needs: pruefen
+    if: needs.pruefen.outputs.neu == 'true'
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            ziel: --win
+            datei: dist/*.exe
+          - os: ubuntu-latest
+            ziel: --linux
+            datei: dist/*.AppImage
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Bauen
+        run: npx electron-builder ${{ matrix.ziel }} --publish never
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: launcher-${{ matrix.os }}
+          path: ${{ matrix.datei }}
+          if-no-files-found: error
+
+  veroeffentlichen:
+    needs: [pruefen, bauen]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: ausgabe
+          merge-multiple: true
+
+      - name: Release-Text aus CHANGELOG.md
+        run: |
+          VERSION="${{ needs.pruefen.outputs.version }}"
+          awk -v v="$VERSION" '
+            index($0, "## [" v "]") == 1 { found = 1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+          [ -s release-notes.md ] || echo "Version $VERSION" > release-notes.md
+
+      - name: Release anlegen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ needs.pruefen.outputs.version }}"
+          gh release create "v$VERSION" ausgabe/* \
+            --title "Tool Launcher $VERSION" \
+            --notes-file release-notes.md \
+            --target "${{ github.sha }}"

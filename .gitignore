@@ -1,0 +1,5 @@
+node_modules/
+dist/
+# Beim Testen aus den Quellen angelegt
+Programme/
+Daten/

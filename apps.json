@@ -1,0 +1,30 @@
+{
+  "programme": [
+    {
+      "id": "paletten-packschema",
+      "name": "Paletten-Packschema",
+      "beschreibung": "Berechnet und zeigt, wie Pakete auf einer Palette gestapelt werden – Draufsicht, Seitenansicht, 3D, Druck und PDF.",
+      "icon": "icons/paletten-packschema.png",
+      "repo": "Marcel1853/tool-releases",
+      "tag": "paletten-packschema-v",
+      "ordner": "Paletten-Packschema",
+      "daten": "Paletten-Packschema",
+      "dateien": {
+        "win32": "^Paletten-Packschema-.*\\.exe$",
+        "linux": "^Paletten-Packschema-.*\\.AppImage$"
+      },
+      "umzug": {
+        "von": [
+          "Daten",
+          "Paletten-Packschema/Daten"
+        ],
+        "dateien": [
+          "schemas.json",
+          "einstellungen.json",
+          "paletten.json",
+          "pakete.json"
+        ]
+      }
+    }
+  ]
+}

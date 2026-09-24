@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="de">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:" />
+    <title>Tool Launcher</title>
+    <link rel="icon" href="icon.png" />
+    <link rel="stylesheet" href="styles.css" />
+</head>
+
+<body>
+    <div class="app">
+        <aside class="panel">
+            <div class="panel-header">
+                <h1>Tool Launcher</h1>
+                <div class="sub">Programme starten · aktuell halten</div>
+            </div>
+
+            <div class="update-box" id="launcherUpdate" hidden></div>
+
+            <section class="section">
+                <h2>Launcher</h2>
+                <dl class="info">
+                    <div><dt>Version</dt><dd id="version">–</dd></div>
+                    <div><dt>Ordner</dt><dd id="wurzel">–</dd></div>
+                </dl>
+                <button class="btn btn-ghost btn-block" id="neuLaden" type="button">Nach Updates suchen</button>
+                <p class="hint" id="status" role="status"></p>
+            </section>
+
+            <section class="section">
+                <h2>So funktioniert's</h2>
+                <p class="hint">
+                    Programme liegen in <b>Programme/</b>, ihre Daten in <b>Daten/</b> neben dem
+                    Launcher. Updates tauschen nur das Programm aus – Schemas und Einstellungen
+                    bleiben immer erhalten.
+                </p>
+            </section>
+        </aside>
+
+        <main class="main">
+            <section class="stats" id="stats"></section>
+            <div class="warning" id="warnung"></div>
+            <div class="liste" id="liste"></div>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
