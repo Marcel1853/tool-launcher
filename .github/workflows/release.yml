@@ -19,6 +19,7 @@ permissions:
 
 jobs:
   pruefen:
+    name: Prüfen
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.info.outputs.version }}
@@ -43,6 +44,7 @@ jobs:
           fi
 
   bauen:
+    name: Bauen (${{ matrix.os }})
     needs: pruefen
     if: needs.pruefen.outputs.neu == 'true'
     strategy:
@@ -75,6 +77,7 @@ jobs:
           if-no-files-found: error
 
   veroeffentlichen:
+    name: Veröffentlichen
     needs: [pruefen, bauen]
     runs-on: ubuntu-latest
     steps:
