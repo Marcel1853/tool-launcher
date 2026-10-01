@@ -38,6 +38,9 @@ Stick/
   `Daten/<Programm>/`. Kopiert, verglichen, erst dann wird das Original
   entfernt; was am Ziel schon liegt, wird nie überschrieben. Im alten Ordner
   bleibt eine `UMGEZOGEN.txt`.
+- **Vorhandene Programme:** Liegt ein Programm schon neben dem Launcher
+  (einzeln heruntergeladen) oder in einem eigenen Ordner daneben, übernimmt
+  der Launcher es nach `Programme/` statt es neu herunterzuladen.
 - **Ohne Internet** lassen sich installierte Programme ganz normal starten.
 
 ## Updates des Launchers
@@ -69,7 +72,7 @@ gelesen – ein neues Programm braucht also keinen neuen Launcher. Je Eintrag:
 | `ordner` | Unterordner in `Programme/` |
 | `daten` | Unterordner in `Daten/` – wird dem Programm als `LAUNCHER_DATEN_DIR` übergeben |
 | `dateien` | Muster (regulärer Ausdruck) für die Release-Datei je System (`win32`, `linux`) |
-| `umzug` | optional: alte Daten-Orte (`von`, relativ zum Launcher) und Dateinamen |
+| `umzug` | optional: alte Daten-Orte (`von`, relativ zum Launcher), Dateinamen (`dateien`) und `merkmal`: je Dateiname ein Schlüssel, der im Inhalt stehen muss – für Dateinamen, die mehrere Programme benutzen (`einstellungen.json`) |
 
 Das Programm selbst muss `LAUNCHER_DATEN_DIR` als Daten-Ordner verwenden,
 wenn die Variable gesetzt ist.

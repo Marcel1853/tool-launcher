@@ -20,14 +20,18 @@
       "umzug": {
         "von": [
           "Daten",
-          "Paletten-Packschema/Daten"
+          "Paletten-Packschema/Daten",
+          "Paletten-Packschema/Daten/Paletten-Packschema"
         ],
         "dateien": [
           "schemas.json",
           "einstellungen.json",
           "paletten.json",
           "pakete.json"
-        ]
+        ],
+        "merkmal": {
+          "einstellungen.json": "palletLength"
+        }
       }
     },
     {
@@ -46,7 +50,21 @@
         "linux": "^Wohlenberg-Schnittplan-.*\\.AppImage$"
       },
       "ordner": "Wohlenberg-Schnittplan",
-      "daten": "Wohlenberg-Schnittplan"
+      "daten": "Wohlenberg-Schnittplan",
+      "umzug": {
+        "von": [
+          "Daten",
+          "Wohlenberg-Schnittplan/Daten",
+          "Wohlenberg-Schnittplan/Daten/Wohlenberg-Schnittplan"
+        ],
+        "dateien": [
+          "auftraege.json",
+          "einstellungen.json"
+        ],
+        "merkmal": {
+          "einstellungen.json": "bogenBreite"
+        }
+      }
     }
   ]
 }

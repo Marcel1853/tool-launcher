@@ -124,6 +124,46 @@ function installiert(p) {
     }
 }
 
+/**
+ * Liegt ein Programm schon neben dem Launcher (einzeln heruntergeladen) oder
+ * in einem eigenen Ordner daneben (z. B. Paletten-Packschema/ auf dem Stick),
+ * wird es übernommen: nach Programme/<Ordner>/ verschoben statt neu geladen.
+ * Gibt es mehrere, zählt die höchste Version. Nur wenn noch nichts installiert ist.
+ */
+function vorhandeneUebernehmen(p) {
+    if (installiert(p) || !p.dateien || !p.dateien[process.platform]) return null;
+    const muster = new RegExp(p.dateien[process.platform]);
+    let bester = null;
+    for (const ordner of [WURZEL, path.join(WURZEL, p.ordner)]) {
+        let namen = [];
+        try { namen = fs.readdirSync(ordner); } catch (e) { continue; }
+        for (const name of namen) {
+            if (!muster.test(name)) continue;
+            const version = (/(\d+\.\d+\.\d+)/.exec(name) || [])[1] || "0.0.0";
+            if (!bester || istNeuer(version, bester.version)) bester = { pfad: path.join(ordner, name), name, version };
+        }
+    }
+    if (!bester) return null;
+    const ziel = path.join(programmOrdner(p), bester.name);
+    try {
+        fs.mkdirSync(programmOrdner(p), { recursive: true });
+        try {
+            fs.renameSync(bester.pfad, ziel);
+        } catch (e) {
+            // Anderes Laufwerk o. Ä.: kopieren, vergleichen, dann löschen
+            fs.copyFileSync(bester.pfad, ziel);
+            if (fs.statSync(ziel).size !== fs.statSync(bester.pfad).size) throw new Error("Kopie unvollständig");
+            fs.rmSync(bester.pfad);
+        }
+        if (process.platform !== "win32") fs.chmodSync(ziel, 0o755);
+        fs.writeFileSync(path.join(programmOrdner(p), "version.json"), JSON.stringify({ version: bester.version, datei: bester.name }, null, 2));
+        return { name: p.name, version: bester.version, von: path.relative(WURZEL, bester.pfad) };
+    } catch (e) {
+        // Etwa unter Windows, wenn das Programm gerade läuft
+        return { name: p.name, fehler: `${path.relative(WURZEL, bester.pfad)} ließ sich nicht übernehmen (läuft es gerade?)` };
+    }
+}
+
 /** Zeichen-Entitäten aus XML/HTML auflösen. */
 function entitaeten(s) {
     return String(s)
@@ -254,7 +294,9 @@ const fuerAnzeige = p => symbol(p).then(s => ({
 // das Netz langsam ist. Die aktuelle Liste kommt danach (launcher:listeOnline).
 ipcMain.handle("launcher:liste", async () => {
     programme = lokaleProgrammliste();
+    const uebernommen = programme.map(vorhandeneUebernehmen).filter(Boolean);
     return {
+        uebernommen,
         wurzel: WURZEL,
         version: app.getVersion(),
         // Gerade per Selbst-Update gestartet? Dann den Namen der alten Datei.
@@ -267,6 +309,8 @@ ipcMain.handle("launcher:listeOnline", async () => {
     const liste = await onlineProgrammliste();
     if (!liste) return null;
     programme = liste;
+    // Programme, die nur die Online-Liste kennt, ebenfalls übernehmen
+    programme.forEach(vorhandeneUebernehmen);
     return Promise.all(programme.map(fuerAnzeige));
 });
 
@@ -432,6 +476,10 @@ function datenUmziehen(p) {
         for (const name of p.umzug.dateien) {
             const alt = path.join(quelle, name);
             if (!fs.existsSync(alt)) continue;
+            // Gleiche Dateinamen bei mehreren Programmen (einstellungen.json):
+            // nur übernehmen, was am Inhalt erkennbar zu diesem Programm gehört.
+            const merkmal = p.umzug.merkmal && p.umzug.merkmal[name];
+            if (merkmal && !fs.readFileSync(alt).includes(`"${merkmal}"`)) continue;
             const neu = path.join(ziel, name);
             if (fs.existsSync(neu)) { bericht.uebersprungen.push(path.join(von, name)); continue; }
             fs.mkdirSync(ziel, { recursive: true });
@@ -446,7 +494,7 @@ function datenUmziehen(p) {
             verschoben = true;
         }
         if (verschoben) {
-            fs.writeFileSync(path.join(quelle, "UMGEZOGEN.txt"),
+            fs.writeFileSync(path.join(quelle, `UMGEZOGEN-${p.daten}.txt`),
                 `Die Daten von ${p.name} liegen jetzt in Daten/${p.daten}/ neben dem Tool Launcher.\n` +
                 `Das Programm bitte über den Launcher starten, dann sind alle Schemas da.\n`);
         }

@@ -88,6 +88,14 @@
         setStatus("Suche nach Updates …");
         daten = await window.launcher.liste();
         zeichnen();
+        const ueb = daten.uebernommen || [];
+        const ok = ueb.filter(u => !u.fehler), nein = ueb.filter(u => u.fehler);
+        if (ok.length || nein.length) {
+            setStatus([
+                ok.length ? `Übernommen: ${ok.map(u => `${u.name} ${u.version} (aus ${u.von})`).join(", ")}.` : "",
+                ...nein.map(u => u.fehler),
+            ].filter(Boolean).join(" "));
+        }
         if (daten.aktualisiert) {
             const lu = $("launcherUpdate");
             lu.innerHTML = `<div>Launcher auf <b>${esc(daten.version)}</b> aktualisiert.</div>` +
@@ -125,7 +133,7 @@
         } else if (!daten.aktualisiert) {
             lu.hidden = true;
         }
-        setStatus("");
+        if (!(daten.uebernommen || []).length) setStatus("");
         zeichnen();
     }
 
@@ -137,7 +145,7 @@
             if (!r.ok) { setStatus(`${p.name} ließ sich nicht starten: ${r.fehler}`); return; }
             const u = r.umzug || { verschoben: [], uebersprungen: [] };
             let text = `${p.name} wird gestartet …`;
-            if (u.verschoben.length) text += ` Vorhandene Daten übernommen (${u.verschoben.length} Dateien).`;
+            if (u.verschoben.length) text += ` Vorhandene Daten übernommen (${u.verschoben.length} ${u.verschoben.length === 1 ? "Datei" : "Dateien"}).`;
             if (u.uebersprungen.length) text += ` Nicht übernommen, weil schon vorhanden: ${u.uebersprungen.join(", ")}.`;
             setStatus(text);
             return;

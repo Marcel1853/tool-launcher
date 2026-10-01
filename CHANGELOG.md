@@ -2,6 +2,23 @@
 
 Neueste Version zuerst.
 
+## [1.3.0] – 2026-10-01
+
+### Hinzugefügt
+
+- Programme, die schon neben dem Launcher liegen (einzeln heruntergeladen)
+  oder in einem eigenen Ordner daneben (z. B. `Paletten-Packschema/`), werden
+  übernommen: nach `Programme/<Name>/` verschoben statt neu heruntergeladen.
+  Bei mehreren Versionen zählt die höchste.
+
+### Behoben
+
+- Der Daten-Umzug nahm jede `einstellungen.json` aus `Daten/` als Daten des
+  ersten Programms – auch die eines anderen. Jetzt wird am Inhalt erkannt,
+  zu welchem Programm eine Datei gehört (`merkmal` in `apps.json`); auch der
+  neue Aufbau `<Programm>/Daten/<Programm>/` wird gefunden. Der Hinweis im
+  alten Ordner heißt jetzt `UMGEZOGEN-<Programm>.txt`.
+
 ## [1.2.0] – 2026-10-01
 
 ### Behoben
