@@ -5,7 +5,7 @@
 //   Programme/<Ordner>/   das Programm selbst + version.json (wird ersetzt)
 //   Daten/<Ordner>/       dessen Daten (bleiben immer)
 
-const { app, BrowserWindow, Menu, shell, ipcMain } = require("electron");
+const { app, BrowserWindow, Menu, shell, ipcMain, net } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const { spawn } = require("child_process");
@@ -72,21 +72,37 @@ const datenOrdner = p => path.join(WURZEL, "Daten", p.daten);
 
 let programme = [];
 
-async function holeJson(url) {
-    const antwort = await fetch(url, {
-        headers: { Accept: "application/vnd.github+json", "User-Agent": "Tool-Launcher" },
-        signal: AbortSignal.timeout(10000),
+/**
+ * Netzabfrage über Chromium (net.fetch) statt Nodes eigenem fetch: Nur so
+ * gelten die Proxy-Einstellungen des Systems – im Firmennetz liefen die
+ * Abfragen sonst ins Leere, und der Launcher wirkte aufgehängt.
+ */
+function holen(url, ms, extra = {}) {
+    return net.fetch(url, {
+        ...extra,
+        headers: { "User-Agent": "Tool-Launcher", ...(extra.headers || {}) },
+        signal: extra.signal || AbortSignal.timeout(ms),
     });
+}
+
+async function holeJson(url) {
+    const antwort = await holen(url, 8000, { headers: { Accept: "application/vnd.github+json" } });
     if (!antwort.ok) throw new Error(`HTTP ${antwort.status}`);
     return antwort.json();
 }
 
-async function ladeProgrammliste() {
+/** Mitgelieferte Programmliste – sofort da, ohne Netz. */
+function lokaleProgrammliste() {
+    return JSON.parse(fs.readFileSync(path.join(__dirname, "apps.json"), "utf-8")).programme;
+}
+
+/** Aktuelle Programmliste aus dem Repo, oder null ohne Verbindung. */
+async function onlineProgrammliste() {
     try {
         const liste = await holeJson(APPS_URL);
         if (Array.isArray(liste.programme)) return liste.programme;
-    } catch (e) { /* ohne Internet: mitgelieferte Liste */ }
-    return JSON.parse(fs.readFileSync(path.join(__dirname, "apps.json"), "utf-8")).programme;
+    } catch (e) { /* ohne Internet: bei der mitgelieferten bleiben */ }
+    return null;
 }
 
 /** Versionsnummern vergleichen: 1.10.0 ist neuer als 1.9.2. */
@@ -135,10 +151,7 @@ function htmlZuText(html) {
  * alle Rechner diesen Wert). Er zeigt allerdings nur die letzten 10 Releases.
  */
 async function ausFeed(repo, kennung) {
-    const antwort = await fetch(`https://github.com/${repo}/releases.atom`, {
-        headers: { "User-Agent": "Tool-Launcher" },
-        signal: AbortSignal.timeout(10000),
-    });
+    const antwort = await holen(`https://github.com/${repo}/releases.atom`, 8000);
     if (!antwort.ok) throw new Error(`HTTP ${antwort.status}`);
     const xml = await antwort.text();
     let bester = null;
@@ -224,7 +237,7 @@ async function symbol(p) {
         daten = fs.readFileSync(path.join(__dirname, p.icon));
     } catch (e) {
         try {
-            const antwort = await fetch(`https://raw.githubusercontent.com/${LAUNCHER_REPO}/main/${p.icon}`, { signal: AbortSignal.timeout(8000) });
+            const antwort = await holen(`https://raw.githubusercontent.com/${LAUNCHER_REPO}/main/${p.icon}`, 8000);
             if (antwort.ok) daten = Buffer.from(await antwort.arrayBuffer());
         } catch (e2) { /* ohne Symbol */ }
     }
@@ -233,22 +246,34 @@ async function symbol(p) {
     return url;
 }
 
+const fuerAnzeige = p => symbol(p).then(s => ({
+    id: p.id, name: p.name, beschreibung: p.beschreibung, installiert: installiert(p), symbol: s,
+}));
+
+// Erst die mitgelieferte Liste – das Fenster ist sofort benutzbar, auch wenn
+// das Netz langsam ist. Die aktuelle Liste kommt danach (launcher:listeOnline).
 ipcMain.handle("launcher:liste", async () => {
-    programme = await ladeProgrammliste();
+    programme = lokaleProgrammliste();
     return {
         wurzel: WURZEL,
         version: app.getVersion(),
         // Gerade per Selbst-Update gestartet? Dann den Namen der alten Datei.
         aktualisiert: alterLauncher ? { von: path.basename(alterLauncher), geloescht: alteGeloescht } : null,
-        programme: await Promise.all(programme.map(async p => ({
-            id: p.id, name: p.name, beschreibung: p.beschreibung, installiert: installiert(p), symbol: await symbol(p),
-        }))),
+        programme: await Promise.all(programme.map(fuerAnzeige)),
     };
+});
+
+ipcMain.handle("launcher:listeOnline", async () => {
+    const liste = await onlineProgrammliste();
+    if (!liste) return null;
+    programme = liste;
+    return Promise.all(programme.map(fuerAnzeige));
 });
 
 ipcMain.handle("launcher:pruefen", async () => {
     const ergebnis = { programme: {}, launcher: null, offline: false };
-    for (const p of programme) {
+    // Alle Programme gleichzeitig prüfen statt nacheinander
+    await Promise.all(programme.map(async p => {
         try {
             const n = await neuesteVersion(p.repo, p.download && p.download[process.platform], p.dateien && p.dateien[process.platform], p.tag || "v");
             neueste.set(p.id, n);
@@ -257,7 +282,7 @@ ipcMain.handle("launcher:pruefen", async () => {
             // 404: Es gibt noch kein Release – das ist keine Verbindungsstörung.
             if (!/HTTP 404/.test(e.message)) ergebnis.offline = true;
         }
-    }
+    }));
     try {
         const win = process.platform === "win32";
         const n = await neuesteVersion(LAUNCHER_REPO, win ? "Tool-Launcher-{version}.exe" : "Tool-Launcher-{version}.AppImage",
@@ -272,10 +297,31 @@ ipcMain.handle("launcher:pruefen", async () => {
 
 // --- Herunterladen -----------------------------------------------------------
 
-/** Lädt `datei` nach `ziel`: erst als .part, Größe prüfen, dann umbenennen. */
+/**
+ * Lädt `datei` nach `ziel`: erst als .part, Größe prüfen, dann umbenennen.
+ * Kommt 30 Sekunden lang nichts an, wird abgebrochen – statt ewig zu hängen.
+ */
 async function herunterladen(datei, ziel, fortschritt) {
     const part = ziel + ".part";
-    const antwort = await fetch(datei.url, { headers: { "User-Agent": "Tool-Launcher" } });
+    const abbruch = new AbortController();
+    let waechter = null;
+    const wachen = () => {
+        clearTimeout(waechter);
+        waechter = setTimeout(() => abbruch.abort(new Error("Der Download kommt nicht voran – Verbindung prüfen und noch einmal versuchen.")), 30000);
+    };
+    wachen();
+    try {
+        return await herunterladenMit(datei, ziel, part, fortschritt, abbruch.signal, wachen);
+    } catch (e) {
+        if (abbruch.signal.aborted && abbruch.signal.reason) throw abbruch.signal.reason;
+        throw e;
+    } finally {
+        clearTimeout(waechter);
+    }
+}
+
+async function herunterladenMit(datei, ziel, part, fortschritt, signal, wachen) {
+    const antwort = await holen(datei.url, 0, { signal });
     if (!antwort.ok || !antwort.body) throw new Error(`Download fehlgeschlagen (HTTP ${antwort.status})`);
     const gesamt = datei.groesse || Number(antwort.headers.get("content-length")) || 0;
     const aus = fs.createWriteStream(part);
@@ -285,6 +331,7 @@ async function herunterladen(datei, ziel, fortschritt) {
         for (; ;) {
             const { done, value } = await leser.read();
             if (done) break;
+            wachen();
             geladen += value.length;
             if (!aus.write(Buffer.from(value))) await new Promise(r => aus.once("drain", r));
             fortschritt(gesamt ? geladen / gesamt : 0);
@@ -340,7 +387,7 @@ ipcMain.handle("launcher:selbstUpdate", async ereignis => {
         // Umgebungsvariablen der alten Datei nicht weitergeben – die neue setzt eigene.
         const env = { ...process.env };
         ["PORTABLE_EXECUTABLE_FILE", "PORTABLE_EXECUTABLE_DIR", "PORTABLE_EXECUTABLE_APP_FILENAME", "APPIMAGE", "APPDIR", "ARGV0", "OWD"].forEach(k => delete env[k]);
-        const kind = spawn(ziel, [ALT_ARG + eigene], { cwd: ordner, env, detached: true, stdio: "ignore" });
+        const kind = loslassen(ziel, [ALT_ARG + eigene], { cwd: ordner, env, detached: true, stdio: "ignore" });
         const fehler = await new Promise(fertig => {
             kind.once("spawn", () => fertig(null));
             kind.once("error", e => fertig(e));
@@ -353,6 +400,19 @@ ipcMain.handle("launcher:selbstUpdate", async ereignis => {
         return { ok: false, fehler: e.message };
     }
 });
+
+/**
+ * Programm unabhängig vom Launcher starten. Unter Linux erben Kindprozesse
+ * alle offenen Dateien – auch solche aus dem eingehängten AppImage des
+ * Launchers. Dann bleibt der alte Launcher im Hintergrund hängen, bis das
+ * Programm beendet ist. Darum vorher alle offenen Dateien außer 0–2 schließen.
+ */
+function loslassen(datei, args, optionen) {
+    // bash, weil die einfache sh nur Dateinummern bis 9 schließen kann.
+    if (process.platform === "win32" || !fs.existsSync("/bin/bash")) return spawn(datei, args, optionen);
+    const skript = 'for f in /proc/$$/fd/*; do n=${f##*/}; [ "$n" -gt 2 ] 2>/dev/null && eval "exec $n>&-"; done; exec "$0" "$@"';
+    return spawn("/bin/bash", ["-c", skript, datei, ...args], optionen);
+}
 
 // --- Daten-Umzug ---------------------------------------------------------------
 
@@ -401,7 +461,7 @@ ipcMain.handle("launcher:starten", async (_ereignis, id) => {
     const umzug = datenUmziehen(p);
     fs.mkdirSync(datenOrdner(p), { recursive: true });
     try {
-        const kind = spawn(path.join(programmOrdner(p), v.datei), [], {
+        const kind = loslassen(path.join(programmOrdner(p), v.datei), [], {
             cwd: programmOrdner(p),
             env: { ...process.env, LAUNCHER_DATEN_DIR: datenOrdner(p) },
             detached: true,

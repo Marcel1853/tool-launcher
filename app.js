@@ -94,6 +94,8 @@
                 (daten.aktualisiert.geloescht ? "" : `<div class="hint">Die alte Datei ${esc(daten.aktualisiert.von)} ließ sich nicht löschen – bitte von Hand entfernen.</div>`);
             lu.hidden = false;
         }
+        const online = await window.launcher.listeOnline();
+        if (online) { daten.programme = online; zeichnen(); }
         const p = await window.launcher.pruefen();
         neueste = p.programme;
         geprueft = true;

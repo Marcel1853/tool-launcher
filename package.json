@@ -1,6 +1,6 @@
 {
   "name": "tool-launcher",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Startet und aktualisiert eigene Programme vom USB-Stick",
   "main": "main.js",
   "author": "Marcel Steegmann",

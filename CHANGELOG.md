@@ -2,6 +2,24 @@
 
 Neueste Version zuerst.
 
+## [1.2.0] – 2026-10-01
+
+### Behoben
+
+- Launcher hing im Firmennetz: Die Abfragen liefen über Nodes eigenes
+  fetch, das die Proxy-Einstellungen des Systems nicht kennt – jede Abfrage
+  wartete bis zur Zeitgrenze, nacheinander, bevor überhaupt etwas angezeigt
+  wurde. Jetzt über Chromium (wie ein Browser, mit Proxy), alle Programme
+  gleichzeitig, höchstens 8 Sekunden.
+- Das Fenster zeigt die Programme sofort aus der mitgelieferten Liste; die
+  aktuelle Liste und die Versionen kommen danach.
+- Downloads brechen ab, wenn 30 Sekunden lang nichts ankommt, statt ewig
+  zu hängen.
+- Unter Linux blieb nach einem Selbst-Update (und solange ein gestartetes
+  Programm lief) der alte Launcher im Hintergrund hängen, weil das neue
+  Programm noch Dateien aus dessen AppImage geerbt hatte. Programme werden
+  jetzt ohne diese geerbten Dateien gestartet.
+
 ## [1.1.0] – 2026-10-01
 
 ### Hinzugefügt

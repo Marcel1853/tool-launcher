@@ -5,6 +5,8 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("launcher", {
     /** Programmliste mit installierten Versionen. */
     liste: () => ipcRenderer.invoke("launcher:liste"),
+    /** Aktuelle Programmliste aus dem Repo (oder null ohne Verbindung). */
+    listeOnline: () => ipcRenderer.invoke("launcher:listeOnline"),
     /** Neueste Versionen aus den Releases (braucht Internet). */
     pruefen: () => ipcRenderer.invoke("launcher:pruefen"),
     installieren: id => ipcRenderer.invoke("launcher:installieren", id),
