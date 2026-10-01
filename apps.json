@@ -29,6 +29,24 @@
           "pakete.json"
         ]
       }
+    },
+    {
+      "id": "wohlenberg-schnittplan",
+      "name": "Wohlenberg-Schnittplan",
+      "beschreibung": "Teilt Bogen in Nutzen auf und berechnet die Schnittreihenfolge mit Anschlagfolge (Rückwärtsprogramm) für den Wohlenberg-Planschneider.",
+      "icon": "icons/wohlenberg-schnittplan.png",
+      "repo": "Marcel1853/tool-releases",
+      "tag": "wohlenberg-schnittplan-v",
+      "download": {
+        "win32": "Wohlenberg-Schnittplan-{version}.exe",
+        "linux": "Wohlenberg-Schnittplan-{version}.AppImage"
+      },
+      "dateien": {
+        "win32": "^Wohlenberg-Schnittplan-.*\\.exe$",
+        "linux": "^Wohlenberg-Schnittplan-.*\\.AppImage$"
+      },
+      "ordner": "Wohlenberg-Schnittplan",
+      "daten": "Wohlenberg-Schnittplan"
     }
   ]
 }

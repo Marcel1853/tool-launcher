@@ -4,7 +4,7 @@ Startet eigene Programme vom USB-Stick (oder aus einem beliebigen Ordner) und
 hält sie aktuell: installieren, aktualisieren, starten – ohne Anmeldung,
 ohne Installation.
 
-Zurzeit dabei: **Paletten-Packschema**.
+Zurzeit dabei: **Paletten-Packschema** und **Wohlenberg-Schnittplan**.
 
 ## Herunterladen
 
