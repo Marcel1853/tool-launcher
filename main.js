@@ -30,6 +30,41 @@ function wurzelOrdner() {
 }
 
 const WURZEL = wurzelOrdner();
+
+/** Die Datei des laufenden Launchers (portable .exe bzw. .AppImage). Aus den
+ *  Quellen gestartet gibt es keine – dann kein Selbst-Update. */
+function eigeneDatei() {
+    if (process.env.LAUNCHER_ROOT) return null;
+    return process.env.PORTABLE_EXECUTABLE_FILE || process.env.APPIMAGE || null;
+}
+
+// Nach einem Selbst-Update startet die neue Version mit dem Pfad der alten.
+const ALT_ARG = "--alter-launcher=";
+const alterLauncher = (process.argv.find(a => a.startsWith(ALT_ARG)) || "").slice(ALT_ARG.length) || null;
+
+/**
+ * Alte Launcher-Datei nach dem Update löschen. Sie ist eventuell noch kurz
+ * gesperrt, bis sich der alte Prozess beendet hat – darum ein paar Versuche.
+ * Gelöscht wird nur eine Tool-Launcher-Datei im selben Ordner.
+ */
+async function alteVersionLoeschen() {
+    if (!alterLauncher) return null;
+    const eigene = eigeneDatei();
+    const alt = path.resolve(alterLauncher);
+    if (!/^Tool-Launcher.*\.(exe|AppImage)$/i.test(path.basename(alt))) return null;
+    if (eigene && (path.resolve(eigene) === alt || path.dirname(path.resolve(eigene)) !== path.dirname(alt))) return null;
+    for (let i = 0; i < 30; i++) {
+        try {
+            if (!fs.existsSync(alt)) return path.basename(alt);
+            fs.rmSync(alt);
+            return path.basename(alt);
+        } catch (e) {
+            await new Promise(r => setTimeout(r, 500));
+        }
+    }
+    return null;
+}
+let alteGeloescht = null;
 const programmOrdner = p => path.join(WURZEL, "Programme", p.ordner);
 const datenOrdner = p => path.join(WURZEL, "Daten", p.daten);
 
@@ -73,12 +108,59 @@ function installiert(p) {
     }
 }
 
+/** Zeichen-Entitäten aus XML/HTML auflösen. */
+function entitaeten(s) {
+    return String(s)
+        .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+        .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)))
+        .replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'")
+        .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+}
+
+/** Release-Text aus dem Feed (HTML) als lesbarer Text. */
+function htmlZuText(html) {
+    return entitaeten(String(html)
+        .replace(/<li>/gi, "- ")
+        .replace(/<br\s*\/?>\s*/gi, " ")
+        .replace(/<\/(li|p|h\d|ul|ol)>/gi, "\n")
+        .replace(/<h\d[^>]*>/gi, "\n")
+        .replace(/<[^>]+>/g, ""))
+        .replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
 /**
- * Neueste Version eines Programms samt der Datei für dieses Betriebssystem.
- * In einem Sammel-Repo (mehrere Programme) zählen nur Releases, deren Tag mit
- * `kennung` beginnt, z. B. „paletten-packschema-v“.
+ * Neuestes Release mit dieser Kennung aus dem Atom-Feed des Repos. Der Feed
+ * liegt auf github.com selbst und zählt nicht gegen die 60 Abfragen pro
+ * Stunde, die die GitHub-API ohne Anmeldung erlaubt (in der Firma teilen sich
+ * alle Rechner diesen Wert). Er zeigt allerdings nur die letzten 10 Releases.
  */
-async function neuesteVersion(repo, muster, kennung) {
+async function ausFeed(repo, kennung) {
+    const antwort = await fetch(`https://github.com/${repo}/releases.atom`, {
+        headers: { "User-Agent": "Tool-Launcher" },
+        signal: AbortSignal.timeout(10000),
+    });
+    if (!antwort.ok) throw new Error(`HTTP ${antwort.status}`);
+    const xml = await antwort.text();
+    let bester = null;
+    for (const eintrag of xml.split("<entry>").slice(1)) {
+        const link = /\/releases\/tag\/([^"]+)"/.exec(eintrag);
+        if (!link) continue;
+        const tag = decodeURIComponent(link[1]);
+        if (!tag.startsWith(kennung)) continue;
+        const version = tag.slice(kennung.length);
+        if (bester && !istNeuer(version, bester.version)) continue;
+        const inhalt = /<content[^>]*>([\s\S]*?)<\/content>/.exec(eintrag);
+        bester = {
+            tag, version,
+            text: inhalt ? htmlZuText(entitaeten(inhalt[1])) : "",
+            seite: `https://github.com/${repo}/releases/tag/${encodeURIComponent(tag)}`,
+        };
+    }
+    return bester;
+}
+
+/** Rückfall über die GitHub-API (zählt gegen das Limit). */
+async function ausApi(repo, muster, kennung) {
     const liste = await holeJson(`https://api.github.com/repos/${repo}/releases?per_page=50`);
     let release = null, version = null;
     for (const r of liste) {
@@ -86,7 +168,7 @@ async function neuesteVersion(repo, muster, kennung) {
         const v = String(r.tag_name).slice(kennung.length);
         if (!release || istNeuer(v, version)) { release = r; version = v; }
     }
-    if (!release) throw new Error("HTTP 404"); // noch nichts veröffentlicht
+    if (!release) return null;
     const re = muster ? new RegExp(muster) : null;
     const datei = re && (release.assets || []).find(a => re.test(a.name));
     return {
@@ -95,6 +177,35 @@ async function neuesteVersion(repo, muster, kennung) {
         seite: release.html_url,
         datei: datei ? { name: datei.name, groesse: datei.size, url: datei.browser_download_url } : null,
     };
+}
+
+/**
+ * Neueste Version eines Programms samt der Datei für dieses Betriebssystem.
+ * In einem Sammel-Repo zählen nur Releases, deren Tag mit `kennung` beginnt.
+ * `vorlage`: Dateiname mit {version}, z. B. „Paletten-Packschema-{version}.exe“
+ * – daraus ergibt sich die Download-Adresse ohne API.
+ */
+async function neuesteVersion(repo, vorlage, muster, kennung) {
+    let feed;
+    try {
+        feed = await ausFeed(repo, kennung);
+    } catch (e) {
+        throw new Error("offline"); // github.com nicht erreichbar
+    }
+    if (feed && vorlage) {
+        const name = vorlage.replace("{version}", feed.version);
+        return {
+            version: feed.version, text: feed.text, seite: feed.seite,
+            datei: { name, groesse: null, url: `https://github.com/${repo}/releases/download/${encodeURIComponent(feed.tag)}/${encodeURIComponent(name)}` },
+        };
+    }
+    // Nicht im Feed (älter als die letzten 10 Releases) oder keine Vorlage.
+    try {
+        const api = await ausApi(repo, muster, kennung);
+        if (api) return api;
+    } catch (e) { /* Limit erreicht – dann eben ohne */ }
+    if (feed) return { version: feed.version, text: feed.text, seite: feed.seite, datei: null };
+    throw new Error("HTTP 404"); // noch nichts veröffentlicht
 }
 
 const neueste = new Map(); // id → Ergebnis von neuesteVersion
@@ -127,6 +238,8 @@ ipcMain.handle("launcher:liste", async () => {
     return {
         wurzel: WURZEL,
         version: app.getVersion(),
+        // Gerade per Selbst-Update gestartet? Dann den Namen der alten Datei.
+        aktualisiert: alterLauncher ? { von: path.basename(alterLauncher), geloescht: alteGeloescht } : null,
         programme: await Promise.all(programme.map(async p => ({
             id: p.id, name: p.name, beschreibung: p.beschreibung, installiert: installiert(p), symbol: await symbol(p),
         }))),
@@ -137,7 +250,7 @@ ipcMain.handle("launcher:pruefen", async () => {
     const ergebnis = { programme: {}, launcher: null, offline: false };
     for (const p of programme) {
         try {
-            const n = await neuesteVersion(p.repo, p.dateien && p.dateien[process.platform], p.tag || "v");
+            const n = await neuesteVersion(p.repo, p.download && p.download[process.platform], p.dateien && p.dateien[process.platform], p.tag || "v");
             neueste.set(p.id, n);
             ergebnis.programme[p.id] = { version: n.version, text: n.text, seite: n.seite, hatDatei: !!n.datei };
         } catch (e) {
@@ -146,11 +259,12 @@ ipcMain.handle("launcher:pruefen", async () => {
         }
     }
     try {
-        const muster = process.platform === "win32" ? "^Tool-Launcher-.*\\.exe$" : "^Tool-Launcher-.*\\.AppImage$";
-        const n = await neuesteVersion(LAUNCHER_REPO, muster, "v");
+        const win = process.platform === "win32";
+        const n = await neuesteVersion(LAUNCHER_REPO, win ? "Tool-Launcher-{version}.exe" : "Tool-Launcher-{version}.AppImage",
+            win ? "^Tool-Launcher-.*\\.exe$" : "^Tool-Launcher-.*\\.AppImage$", "v");
         if (istNeuer(n.version, app.getVersion())) {
             neueste.set("launcher", n);
-            ergebnis.launcher = { version: n.version, seite: n.seite, hatDatei: !!n.datei };
+            ergebnis.launcher = { version: n.version, seite: n.seite, hatDatei: !!n.datei, automatisch: !!(n.datei && eigeneDatei()) };
         }
     } catch (e) { /* noch kein Release oder offline */ }
     return ergebnis;
@@ -163,7 +277,7 @@ async function herunterladen(datei, ziel, fortschritt) {
     const part = ziel + ".part";
     const antwort = await fetch(datei.url, { headers: { "User-Agent": "Tool-Launcher" } });
     if (!antwort.ok || !antwort.body) throw new Error(`Download fehlgeschlagen (HTTP ${antwort.status})`);
-    const gesamt = Number(antwort.headers.get("content-length")) || datei.groesse || 0;
+    const gesamt = datei.groesse || Number(antwort.headers.get("content-length")) || 0;
     const aus = fs.createWriteStream(part);
     let geladen = 0;
     try {
@@ -181,7 +295,7 @@ async function herunterladen(datei, ziel, fortschritt) {
         fs.rmSync(part, { force: true });
         throw e;
     }
-    if (datei.groesse && fs.statSync(part).size !== datei.groesse) {
+    if (gesamt && fs.statSync(part).size !== gesamt) {
         fs.rmSync(part, { force: true });
         throw new Error("Die Datei ist unvollständig angekommen – bitte noch einmal versuchen.");
     }
@@ -208,13 +322,33 @@ ipcMain.handle("launcher:installieren", async (ereignis, id) => {
     }
 });
 
+/**
+ * Selbst-Update: neue Version neben die alte laden, starten (mit dem Pfad der
+ * alten Datei, damit sie aufräumt) und diesen Launcher beenden. Aus den
+ * Quellen gestartet wird nur heruntergeladen.
+ */
 ipcMain.handle("launcher:selbstUpdate", async ereignis => {
     const n = neueste.get("launcher");
     if (!n || !n.datei) return { ok: false, fehler: "Für dieses System gibt es keine Datei." };
+    const eigene = eigeneDatei();
+    const ordner = eigene ? path.dirname(eigene) : WURZEL;
     try {
-        const ziel = path.join(WURZEL, n.datei.name);
+        const ziel = path.join(ordner, n.datei.name);
         await herunterladen(n.datei, ziel, anteil => ereignis.sender.send("launcher:fortschritt", "launcher", anteil));
-        return { ok: true, datei: n.datei.name };
+        if (!eigene) return { ok: true, datei: n.datei.name, neustart: false };
+
+        // Umgebungsvariablen der alten Datei nicht weitergeben – die neue setzt eigene.
+        const env = { ...process.env };
+        ["PORTABLE_EXECUTABLE_FILE", "PORTABLE_EXECUTABLE_DIR", "PORTABLE_EXECUTABLE_APP_FILENAME", "APPIMAGE", "APPDIR", "ARGV0", "OWD"].forEach(k => delete env[k]);
+        const kind = spawn(ziel, [ALT_ARG + eigene], { cwd: ordner, env, detached: true, stdio: "ignore" });
+        const fehler = await new Promise(fertig => {
+            kind.once("spawn", () => fertig(null));
+            kind.once("error", e => fertig(e));
+        });
+        if (fehler) return { ok: false, fehler: `Die neue Version ließ sich nicht starten: ${fehler.message}` };
+        kind.unref();
+        setTimeout(() => app.quit(), 300);
+        return { ok: true, datei: n.datei.name, neustart: true };
     } catch (e) {
         return { ok: false, fehler: e.message };
     }
@@ -322,8 +456,9 @@ function fensterBauen() {
     });
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
     Menu.setApplicationMenu(null);
+    alteGeloescht = await alteVersionLoeschen();
     fensterBauen();
 });
 

@@ -7,12 +7,16 @@
       "icon": "icons/paletten-packschema.png",
       "repo": "Marcel1853/tool-releases",
       "tag": "paletten-packschema-v",
-      "ordner": "Paletten-Packschema",
-      "daten": "Paletten-Packschema",
+      "download": {
+        "win32": "Paletten-Packschema-{version}.exe",
+        "linux": "Paletten-Packschema-{version}.AppImage"
+      },
       "dateien": {
         "win32": "^Paletten-Packschema-.*\\.exe$",
         "linux": "^Paletten-Packschema-.*\\.AppImage$"
       },
+      "ordner": "Paletten-Packschema",
+      "daten": "Paletten-Packschema",
       "umzug": {
         "von": [
           "Daten",

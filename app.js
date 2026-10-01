@@ -88,17 +88,39 @@
         setStatus("Suche nach Updates …");
         daten = await window.launcher.liste();
         zeichnen();
+        if (daten.aktualisiert) {
+            const lu = $("launcherUpdate");
+            lu.innerHTML = `<div>Launcher auf <b>${esc(daten.version)}</b> aktualisiert.</div>` +
+                (daten.aktualisiert.geloescht ? "" : `<div class="hint">Die alte Datei ${esc(daten.aktualisiert.von)} ließ sich nicht löschen – bitte von Hand entfernen.</div>`);
+            lu.hidden = false;
+        }
         const p = await window.launcher.pruefen();
         neueste = p.programme;
         geprueft = true;
         offline = p.offline;
         const lu = $("launcherUpdate");
+        if (p.launcher && p.launcher.automatisch) {
+            // Gleich selbst aktualisieren und neu starten
+            lu.innerHTML = `<div>Launcher wird auf <b>${esc(p.launcher.version)}</b> aktualisiert …</div>` +
+                `<div class="fortschritt" id="fs-launcher"><div></div></div>`;
+            lu.hidden = false;
+            setStatus("");
+            zeichnen();
+            const r = await window.launcher.selbstUpdate();
+            if (r.ok && r.neustart) {
+                lu.innerHTML = `<div>Launcher ${esc(p.launcher.version)} wird gestartet …</div>`;
+                return;
+            }
+            lu.innerHTML = `<div>Aktualisieren hat nicht geklappt: ${esc(r.fehler || "unbekannter Fehler")}</div>` +
+                `<a href="${esc(p.launcher.seite)}" target="_blank" rel="noopener">Von Hand herunterladen</a>`;
+            return;
+        }
         if (p.launcher) {
             lu.innerHTML = `<div>Neue Launcher-Version <b>${esc(p.launcher.version)}</b> verfügbar.</div>` +
                 (p.launcher.hatDatei ? `<button class="btn btn-small" id="selbstUpdate" type="button">Herunterladen</button>` : "") +
                 `<a href="${esc(p.launcher.seite)}" target="_blank" rel="noopener">Was ist neu?</a>`;
             lu.hidden = false;
-        } else {
+        } else if (!daten.aktualisiert) {
             lu.hidden = true;
         }
         setStatus("");
@@ -149,7 +171,7 @@
     window.launcher.beiFortschritt((id, anteil) => {
         const el = $(`fs-${id}`);
         if (el) { el.hidden = false; el.firstElementChild.style.width = `${Math.round(anteil * 100)}%`; }
-        if (id === "launcher") setStatus(`Neue Launcher-Version wird heruntergeladen … ${Math.round(anteil * 100)} %`);
+        if (id === "launcher" && !el) setStatus(`Neue Launcher-Version wird heruntergeladen … ${Math.round(anteil * 100)} %`);
     });
 
     document.addEventListener("click", e => {

@@ -42,10 +42,16 @@ Stick/
 
 ## Updates des Launchers
 
-Gibt es eine neuere Launcher-Version, zeigt er das oben an und lädt sie auf
-Wunsch neben sich herunter. Eine laufende Exe kann sich nicht selbst
-ersetzen – danach den alten Launcher schließen, den neuen starten und den
-alten löschen.
+Beim Start prüft der Launcher, ob es eine neuere Version von sich selbst
+gibt. Wenn ja, lädt er sie neben sich herunter (z. B.
+`Tool-Launcher-1.1.0.exe`), startet sie und beendet sich. Die neue Version
+löscht die alte Datei und zeigt „Launcher aktualisiert“. Eine Verknüpfung auf
+die alte Datei muss man danach neu anlegen, weil der Dateiname die Version
+enthält.
+
+Abgefragt wird der Release-Feed auf github.com (`releases.atom`), nicht die
+GitHub-API – die erlaubt ohne Anmeldung nur 60 Abfragen pro Stunde je
+Internetanschluss, in einer Firma für alle Rechner zusammen.
 
 ## Programme hinzufügen
 
@@ -58,6 +64,7 @@ gelesen – ein neues Programm braucht also keinen neuen Launcher. Je Eintrag:
 | `name`, `beschreibung` | Anzeige |
 | `icon` | Symbol (PNG), Pfad im Launcher-Repo, z. B. `icons/paletten-packschema.png` |
 | `repo` | öffentliches GitHub-Repo mit den Releases – für alle eigenen Programme das Sammel-Repo `Marcel1853/tool-releases` |
+| `download` | Dateiname der Release-Datei je System mit `{version}`, z. B. `Paletten-Packschema-{version}.exe` – daraus wird die Download-Adresse, ohne API |
 | `tag` | Kennung am Anfang des Release-Tags, z. B. `paletten-packschema-v` (Tag `paletten-packschema-v1.6.0`) – trennt die Programme im Sammel-Repo |
 | `ordner` | Unterordner in `Programme/` |
 | `daten` | Unterordner in `Daten/` – wird dem Programm als `LAUNCHER_DATEN_DIR` übergeben |

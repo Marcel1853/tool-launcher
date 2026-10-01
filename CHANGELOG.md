@@ -2,6 +2,24 @@
 
 Neueste Version zuerst.
 
+## [1.1.0] – 2026-10-01
+
+### Hinzugefügt
+
+- Selbst-Update: Gibt es eine neuere Launcher-Version, lädt der Launcher sie
+  beim Start neben sich herunter, startet sie und beendet sich; die neue
+  Version löscht danach die alte Datei und meldet „Launcher aktualisiert“.
+  Aus den Quellen gestartet wird nur heruntergeladen.
+
+### Behoben
+
+- „Keine Verbindung“, obwohl Internet da war: Die GitHub-API erlaubt ohne
+  Anmeldung nur 60 Abfragen pro Stunde je Internetanschluss – in der Firma
+  für alle Rechner zusammen. Versionen kommen jetzt aus dem Release-Feed auf
+  github.com, Downloads über die feste Adresse; die API nur noch als
+  Rückfall. Dafür in `apps.json` das Feld `download` (Dateiname mit
+  `{version}`).
+
 ## [1.0.0] – 2026-09-24
 
 ### Hinzugefügt
