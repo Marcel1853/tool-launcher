@@ -75,6 +75,11 @@ jobs:
           name: launcher-${{ matrix.os }}
           path: ${{ matrix.datei }}
           if-no-files-found: error
+          # Nur Übergabe an den Job „Veröffentlichen“ – die Datei landet dort als
+          # Release. Danach wird das Artefakt nicht mehr gebraucht (spart Actions-Speicher).
+          retention-days: 1
+          # .exe/.AppImage sind schon komprimiert – erneutes Packen kostet nur Zeit.
+          compression-level: 0
 
   veroeffentlichen:
     name: Veröffentlichen
