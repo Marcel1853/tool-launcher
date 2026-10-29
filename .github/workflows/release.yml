@@ -1,7 +1,12 @@
-# Baut bei jedem Push auf main den Launcher und legt in diesem Repo ein Release an –
+# Baut bei jedem Push auf main den Launcher und veröffentlicht ihn in diesem Repo –
 # aber nur, wenn es die Version aus package.json noch nicht gibt.
 # Release: Tag vX.Y.Z, Windows-Exe (portable) und Linux-AppImage, Text = Abschnitt
 # „## [X.Y.Z]“ aus CHANGELOG.md.
+#
+# Ablauf ohne Actions-Speicher (keine Artefakte, kein Cache):
+#   1. Prüfen: Release als Entwurf anlegen (Entwürfe sieht der Launcher nicht)
+#   2. Bauen: jedes System lädt seine Datei direkt in den Entwurf hoch
+#   3. Veröffentlichen: Entwurf freigeben – erst jetzt ist die Version sichtbar
 #
 # Neue Version: Version in package.json hochzählen, Abschnitt im CHANGELOG.md
 # schreiben, auf main pushen. Eine Änderung nur an apps.json braucht keine neue
@@ -17,6 +22,11 @@ on:
 permissions:
   contents: write
 
+env:
+  RELEASES_REPO: ${{ github.repository }}
+  TAG_PREFIX: v
+  TITEL: Tool Launcher
+
 jobs:
   pruefen:
     name: Prüfen
@@ -25,22 +35,48 @@ jobs:
       version: ${{ steps.info.outputs.version }}
       neu: ${{ steps.gh.outputs.neu }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Repository auschecken
+        uses: actions/checkout@v4
 
       - name: Version lesen
         id: info
         run: echo "version=$(jq -r '.version' package.json)" >> "$GITHUB_OUTPUT"
 
-      - name: Release prüfen
+      - name: Release-Text aus CHANGELOG.md
+        run: |
+          VERSION="${{ steps.info.outputs.version }}"
+          # Abschnitt „## [VERSION]“ bis zur nächsten „## [“-Überschrift
+          awk -v v="$VERSION" '
+            index($0, "## [" v "]") == 1 { found = 1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+          [ -s release-notes.md ] || echo "Version $VERSION" > release-notes.md
+
+      - name: Release prüfen und als Entwurf anlegen
         id: gh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view "v${{ steps.info.outputs.version }}" >/dev/null 2>&1; then
-            echo "v${{ steps.info.outputs.version }} gibt es schon – nichts zu tun."
-            echo "neu=false" >> "$GITHUB_OUTPUT"
-          else
+          export GH_TOKEN="$(printf '%s' "$GH_TOKEN" | tr -d '[:space:]')"
+          TAG="${TAG_PREFIX}${{ steps.info.outputs.version }}"
+          if ENTWURF=$(gh release view "$TAG" --repo "$RELEASES_REPO" --json isDraft -q .isDraft 2>&1); then
+            if [ "$ENTWURF" = "true" ]; then
+              # Rest eines abgebrochenen Laufs: weitermachen, Dateien werden ersetzt.
+              echo "$TAG liegt als Entwurf vor – Dateien werden neu hochgeladen."
+              echo "neu=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "$TAG ist schon veröffentlicht – nichts zu tun."
+              echo "neu=false" >> "$GITHUB_OUTPUT"
+            fi
+          elif echo "$ENTWURF" | grep -qi "not found"; then
+            gh release create "$TAG" --repo "$RELEASES_REPO" --draft --target "${{ github.sha }}" \
+              --title "$TITEL ${{ steps.info.outputs.version }}" --notes-file release-notes.md
+            echo "Entwurf $TAG angelegt."
             echo "neu=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Zugriff auf $RELEASES_REPO fehlgeschlagen: $ENTWURF"
+            exit 1
           fi
 
   bauen:
@@ -52,63 +88,49 @@ jobs:
         include:
           - os: windows-latest
             ziel: --win
-            datei: dist/*.exe
+            datei: exe
           - os: ubuntu-latest
             ziel: --linux
-            datei: dist/*.AppImage
+            datei: AppImage
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Repository auschecken
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      # Ohne Cache – der würde im Actions-Speicher liegen.
+      - name: Node einrichten
+        uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
 
-      - run: npm ci
+      - name: Abhängigkeiten installieren
+        run: npm ci
 
       - name: Bauen
+        # --publish never: electron-builder soll nichts selbst hochladen.
         run: npx electron-builder ${{ matrix.ziel }} --publish never
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: launcher-${{ matrix.os }}
-          path: ${{ matrix.datei }}
-          if-no-files-found: error
-          # Nur Übergabe an den Job „Veröffentlichen“ – die Datei landet dort als
-          # Release. Danach wird das Artefakt nicht mehr gebraucht (spart Actions-Speicher).
-          retention-days: 1
-          # .exe/.AppImage sind schon komprimiert – erneutes Packen kostet nur Zeit.
-          compression-level: 0
+      # Direkt in den Release-Entwurf statt als Artefakt zwischenzulagern
+      - name: In den Release-Entwurf hochladen
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          export GH_TOKEN="$(printf '%s' "$GH_TOKEN" | tr -d '[:space:]')"
+          ls -la dist/*.${{ matrix.datei }}
+          gh release upload "${TAG_PREFIX}${{ needs.pruefen.outputs.version }}" dist/*.${{ matrix.datei }} \
+            --repo "$RELEASES_REPO" --clobber
 
   veroeffentlichen:
     name: Veröffentlichen
     needs: [pruefen, bauen]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/download-artifact@v4
-        with:
-          path: ausgabe
-          merge-multiple: true
-
-      - name: Release-Text aus CHANGELOG.md
-        run: |
-          VERSION="${{ needs.pruefen.outputs.version }}"
-          awk -v v="$VERSION" '
-            index($0, "## [" v "]") == 1 { found = 1; next }
-            found && /^## \[/ { exit }
-            found { print }
-          ' CHANGELOG.md > release-notes.md
-          [ -s release-notes.md ] || echo "Version $VERSION" > release-notes.md
-
-      - name: Release anlegen
+      - name: Entwurf freigeben
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          VERSION="${{ needs.pruefen.outputs.version }}"
-          gh release create "v$VERSION" ausgabe/* \
-            --title "Tool Launcher $VERSION" \
-            --notes-file release-notes.md \
-            --target "${{ github.sha }}"
+          export GH_TOKEN="$(printf '%s' "$GH_TOKEN" | tr -d '[:space:]')"
+          TAG="${TAG_PREFIX}${{ needs.pruefen.outputs.version }}"
+          gh release view "$TAG" --repo "$RELEASES_REPO" --json assets -q '.assets[].name'
+          gh release edit "$TAG" --repo "$RELEASES_REPO" --draft=false --latest
