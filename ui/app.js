@@ -88,6 +88,7 @@
         setStatus("Suche nach Updates …");
         daten = await window.launcher.liste();
         zeichnen();
+        ladeanzeigeAus();
         const ueb = daten.uebernommen || [];
         const ok = ueb.filter(u => !u.fehler), nein = ueb.filter(u => u.fehler);
         if (ok.length || nein.length) {
@@ -193,4 +194,13 @@
     });
 
     laden();
+    /** Ladebalken beim Start ausblenden, sobald alles gezeichnet ist. */
+    function ladeanzeigeAus() {
+        const el = document.getElementById("lade");
+        if (!el) return;
+        requestAnimationFrame(() => {
+            el.classList.add("fertig");
+            setTimeout(() => el.remove(), 350);
+        });
+    }
 })();

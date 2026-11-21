@@ -4,6 +4,10 @@ Neueste Version zuerst.
 
 ## [2.0.0] – 2026-11-21
 
+### Hinzugefügt
+
+- Ladebalken beim Start, bis die Oberfläche fertig gezeichnet ist.
+
 ### Geändert
 
 - Unterbau neu: **Tauri (Rust) statt Electron.** Programmliste,
