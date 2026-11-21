@@ -1,0 +1,30 @@
+[package]
+name = "tool-launcher"
+version = "2.0.0"
+description = "Startet und aktualisiert eigene Programme vom USB-Stick"
+authors = ["Marcel Steegmann"]
+edition = "2021"
+publish = false
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Netz: rustls statt OpenSSL (nichts extra nötig), Proxy aus dem System
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "stream"] }
+tokio = { version = "1", features = ["time", "fs", "io-util"] }
+futures-util = "0.3"
+regex = "1"
+base64 = "0.22"
+open = "5"
+
+[profile.release]
+# Klein und schnell: eine portable Exe ohne Ballast
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

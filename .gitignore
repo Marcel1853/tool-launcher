@@ -3,3 +3,6 @@ dist/
 # Beim Testen aus den Quellen angelegt
 Programme/
 Daten/
+# Rust/Tauri
+src-tauri/target/
+src-tauri/gen/
