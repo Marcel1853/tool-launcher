@@ -93,7 +93,7 @@ jobs:
             fi
           elif echo "$ENTWURF" | grep -qi "not found"; then
             gh release create "$TAG" --repo "$RELEASES_REPO" --draft --target "${{ github.sha }}" \
-              --title "$TITEL ${{ steps.info.outputs.version }}" --notes-file release-notes.md
+              --title "$TITEL ${{ steps.info.outputs.version }} – Entwurf, wird gebaut …" --notes-file release-notes.md
             echo "Entwurf $TAG angelegt."
             echo "neu=true" >> "$GITHUB_OUTPUT"
           else
@@ -165,4 +165,5 @@ jobs:
         run: |
           TAG="${TAG_PREFIX}${{ needs.pruefen.outputs.version }}"
           gh release view "$TAG" --repo "$RELEASES_REPO" --json assets -q '.assets[].name'
-          gh release edit "$TAG" --repo "$RELEASES_REPO" --draft=false --latest
+          # Erst jetzt den richtigen Namen – solange gebaut wird, steht „Entwurf“ im Titel.
+          gh release edit "$TAG" --repo "$RELEASES_REPO" --title "$TITEL ${{ needs.pruefen.outputs.version }}" --draft=false --latest
