@@ -1,51 +1,13 @@
 {
   "name": "tool-launcher",
-  "version": "1.3.0",
+  "version": "2.0.0",
   "description": "Startet und aktualisiert eigene Programme vom USB-Stick",
-  "main": "main.js",
-  "author": "Marcel Steegmann",
-  "license": "UNLICENSED",
   "private": true,
+  "license": "UNLICENSED",
+  "author": "Marcel Steegmann",
   "scripts": {
-    "start": "electron .",
-    "build": "electron-builder --linux --win",
-    "build:linux": "electron-builder --linux",
-    "build:win": "electron-builder --win"
-  },
-  "build": {
-    "appId": "de.marcel.toollauncher",
-    "productName": "Tool Launcher",
-    "directories": {
-      "output": "dist"
-    },
-    "files": [
-      "main.js",
-      "preload.js",
-      "index.html",
-      "styles.css",
-      "app.js",
-      "apps.json",
-      "icon.png",
-      "icons/**"
-    ],
-    "icon": "icon.png",
-    "linux": {
-      "target": "AppImage",
-      "category": "Utility",
-      "artifactName": "Tool-Launcher-${version}.AppImage"
-    },
-    "win": {
-      "target": "portable"
-    },
-    "portable": {
-      "artifactName": "Tool-Launcher-${version}.exe"
-    }
-  },
-  "devDependencies": {
-    "electron": "^32.0.0",
-    "electron-builder": "^25.0.0"
-  },
-  "allowScripts": {
-    "electron@32.3.3": true
+    "start": "cargo tauri dev",
+    "build": "cargo tauri build",
+    "test": "cd src-tauri && cargo test"
   }
 }

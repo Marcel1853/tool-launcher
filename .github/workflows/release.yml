@@ -1,16 +1,19 @@
-# Baut bei jedem Push auf main den Launcher und veröffentlicht ihn in diesem Repo –
-# aber nur, wenn es die Version aus package.json noch nicht gibt.
-# Release: Tag vX.Y.Z, Windows-Exe (portable) und Linux-AppImage, Text = Abschnitt
-# „## [X.Y.Z]“ aus CHANGELOG.md.
+# Baut bei jedem Push auf main den Launcher (Tauri: Rust + Weboberfläche) und
+# veröffentlicht ihn in diesem Repo – aber nur, wenn es die Version aus
+# src-tauri/tauri.conf.json noch nicht gibt. Release: Tag vX.Y.Z, Windows-Exe
+# (portable, ohne Installation – nutzt das in Windows 10/11 eingebaute WebView2)
+# und Linux-AppImage, Text = Abschnitt „## [X.Y.Z]“ aus CHANGELOG.md.
 #
 # Ablauf ohne Actions-Speicher (keine Artefakte, kein Cache):
-#   1. Prüfen: Release als Entwurf anlegen (Entwürfe sieht der Launcher nicht)
+#   1. Prüfen: testen, Release als Entwurf anlegen (Entwürfe sieht der Launcher nicht)
 #   2. Bauen: jedes System lädt seine Datei direkt in den Entwurf hoch
 #   3. Veröffentlichen: Entwurf freigeben – erst jetzt ist die Version sichtbar
+# Von Hand auf einem anderen Branch gestartet wird nur gebaut, nichts veröffentlicht.
 #
-# Neue Version: Version in package.json hochzählen, Abschnitt im CHANGELOG.md
-# schreiben, auf main pushen. Eine Änderung nur an apps.json braucht keine neue
-# Version – die Liste liest der Launcher direkt aus main.
+# Neue Version: Version in src-tauri/tauri.conf.json (und Cargo.toml,
+# package.json) hochzählen, Abschnitt im CHANGELOG.md schreiben, auf main pushen.
+# Eine Änderung nur an apps.json braucht keine neue Version – die Liste liest
+# der Launcher direkt aus main.
 name: Release
 
 on:
@@ -26,6 +29,9 @@ env:
   RELEASES_REPO: ${{ github.repository }}
   TAG_PREFIX: v
   TITEL: Tool Launcher
+  DATEINAME: Tool-Launcher
+  # Veröffentlicht wird nur von main aus
+  VEROEFFENTLICHEN: ${{ github.ref == 'refs/heads/main' }}
 
 jobs:
   pruefen:
@@ -38,9 +44,21 @@ jobs:
       - name: Repository auschecken
         uses: actions/checkout@v4
 
+      # Erst testen (Rust-Teil) – schlägt ein Test fehl, wird nichts gebaut.
+      - name: Linux-Bibliotheken für Tauri
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev
+
+      - name: Rust einrichten
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Tests
+        run: cd src-tauri && cargo test
+
       - name: Version lesen
         id: info
-        run: echo "version=$(jq -r '.version' package.json)" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(jq -r '.version' src-tauri/tauri.conf.json)" >> "$GITHUB_OUTPUT"
 
       - name: Release-Text aus CHANGELOG.md
         run: |
@@ -58,7 +76,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          export GH_TOKEN="$(printf '%s' "$GH_TOKEN" | tr -d '[:space:]')"
+          if [ "$VEROEFFENTLICHEN" != "true" ]; then
+            echo "Nicht auf main – nur bauen, nichts veröffentlichen."
+            echo "neu=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           TAG="${TAG_PREFIX}${{ steps.info.outputs.version }}"
           if ENTWURF=$(gh release view "$TAG" --repo "$RELEASES_REPO" --json isDraft -q .isDraft 2>&1); then
             if [ "$ENTWURF" = "true" ]; then
@@ -87,50 +109,60 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            ziel: --win
-            datei: exe
-          - os: ubuntu-latest
-            ziel: --linux
-            datei: AppImage
+            endung: exe
+          - os: ubuntu-22.04
+            endung: AppImage
     runs-on: ${{ matrix.os }}
     steps:
       - name: Repository auschecken
         uses: actions/checkout@v4
 
       # Ohne Cache – der würde im Actions-Speicher liegen.
-      - name: Node einrichten
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
+      - name: Linux-Bibliotheken für Tauri
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf file
 
-      - name: Abhängigkeiten installieren
-        run: npm ci
+      - name: Rust einrichten
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Bauen
-        # --publish never: electron-builder soll nichts selbst hochladen.
-        run: npx electron-builder ${{ matrix.ziel }} --publish never
+        shell: bash
+        run: |
+          VERSION="${{ needs.pruefen.outputs.version }}"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            # Nur die Programmdatei – portable, keine Installation
+            npx --yes @tauri-apps/cli@2 build --no-bundle
+            mkdir -p ausgabe
+            cp src-tauri/target/release/*.exe "ausgabe/${DATEINAME}-${VERSION}.exe"
+          else
+            npx --yes @tauri-apps/cli@2 build --bundles appimage
+            mkdir -p ausgabe
+            cp src-tauri/target/release/bundle/appimage/*.AppImage "ausgabe/${DATEINAME}-${VERSION}.AppImage"
+          fi
+          ls -la ausgabe
 
       # Direkt in den Release-Entwurf statt als Artefakt zwischenzulagern
       - name: In den Release-Entwurf hochladen
+        if: env.VEROEFFENTLICHEN == 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          export GH_TOKEN="$(printf '%s' "$GH_TOKEN" | tr -d '[:space:]')"
-          ls -la dist/*.${{ matrix.datei }}
-          gh release upload "${TAG_PREFIX}${{ needs.pruefen.outputs.version }}" dist/*.${{ matrix.datei }} \
+          gh release upload "${TAG_PREFIX}${{ needs.pruefen.outputs.version }}" ausgabe/*.${{ matrix.endung }} \
             --repo "$RELEASES_REPO" --clobber
 
   veroeffentlichen:
     name: Veröffentlichen
     needs: [pruefen, bauen]
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Entwurf freigeben
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          export GH_TOKEN="$(printf '%s' "$GH_TOKEN" | tr -d '[:space:]')"
           TAG="${TAG_PREFIX}${{ needs.pruefen.outputs.version }}"
           gh release view "$TAG" --repo "$RELEASES_REPO" --json assets -q '.assets[].name'
           gh release edit "$TAG" --repo "$RELEASES_REPO" --draft=false --latest

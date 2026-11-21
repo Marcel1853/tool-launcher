@@ -442,3 +442,62 @@ h2 {
         border-bottom: 1px solid var(--line);
     }
 }
+
+/* ---------- Ladebalken beim Start ---------- */
+.lade {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: grid;
+    place-items: center;
+    background:
+        radial-gradient(1200px 600px at 85% -10%, rgba(124, 156, 255, 0.14), transparent 60%),
+        var(--bg-0);
+    transition: opacity 0.3s;
+}
+
+.lade.fertig {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.lade-karte {
+    display: grid;
+    gap: 14px;
+    justify-items: center;
+}
+
+.lade-titel {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    background: var(--accent-grad);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+}
+
+.lade-balken {
+    width: 220px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--bg-3);
+    overflow: hidden;
+}
+
+.lade-balken > div {
+    width: 40%;
+    height: 100%;
+    border-radius: 2px;
+    background: var(--accent-grad);
+    animation: lade-lauf 1.1s ease-in-out infinite;
+}
+
+@keyframes lade-lauf {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(250%); }
+}
+
+@media print {
+    .lade { display: none !important; }
+}

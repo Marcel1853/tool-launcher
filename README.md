@@ -79,13 +79,22 @@ wenn die Variable gesetzt ist.
 
 ## Entwickeln
 
+Seit Version 2.0 mit **Tauri** statt Electron: Programmliste, Versionsprüfung,
+Download, Start und Daten-Umzug sind in Rust geschrieben (`src-tauri/src/main.rs`),
+die Oberfläche (`ui/`) bleibt HTML/JavaScript/CSS. Die Windows-Exe ist nur
+wenige MB groß und nutzt das in Windows 10/11 eingebaute WebView2 – weiterhin
+portable, ohne Installation.
+
+`apps.json` und `icons/` bleiben im Hauptordner: Ältere Launcher lesen sie dort
+direkt von GitHub; die neue Fassung bettet sie zusätzlich beim Bauen ein.
+
 ```sh
-npm install
-npm start                                  # aus den Quellen, Wurzel = Projektordner
-LAUNCHER_ROOT=/pfad/zum/testordner npm start   # anderer Wurzelordner
-npm run build                              # beide Fassungen nach dist/
+cargo tauri dev                                  # aus den Quellen, Wurzel = Projektordner
+LAUNCHER_ROOT=/pfad/zum/testordner cargo tauri dev   # anderer Wurzelordner
+cargo tauri build                                # fertige Fassung nach src-tauri/target/release/
+cd src-tauri && cargo test                       # Tests
 ```
 
-Veröffentlichen: Version in `package.json` hochzählen, Abschnitt im
-`CHANGELOG.md` schreiben, auf `main` pushen – der Workflow baut und legt das
-Release an.
+Veröffentlichen: Version in `src-tauri/tauri.conf.json` (und `Cargo.toml`,
+`package.json`) hochzählen, Abschnitt im `CHANGELOG.md` schreiben, auf `main`
+pushen – der Workflow baut und legt das Release an.

@@ -2,6 +2,23 @@
 
 Neueste Version zuerst.
 
+## [2.0.0] – 2026-11-21
+
+### Hinzugefügt
+
+- Ladebalken beim Start, bis die Oberfläche fertig gezeichnet ist.
+
+### Geändert
+
+- Unterbau neu: **Tauri (Rust) statt Electron.** Programmliste,
+  Versionsprüfung, Download, Installieren, Starten, Selbst-Update und
+  Daten-Umzug sind jetzt in Rust geschrieben; die Oberfläche bleibt gleich.
+- Die Windows-Exe schrumpft von rund 70 MB auf wenige MB und startet
+  schneller; sie nutzt das in Windows 10/11 eingebaute WebView2 und bleibt
+  portable, ohne Installation.
+- Ältere Launcher aktualisieren sich wie gewohnt auf diese Fassung;
+  Programmliste, Ordner (`Programme/`, `Daten/`) und Downloads bleiben gleich.
+
 ## [1.3.0] – 2026-10-01
 
 ### Hinzugefügt
