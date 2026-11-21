@@ -516,7 +516,11 @@ async fn herunterladen(handle: &tauri::AppHandle, id: &str, datei: &Datei, ziel:
         aus.flush().await.map_err(|e| e.to_string())
     }
     .await;
-    drop(aus);
+    // Datei sofort schließen: tokio schließt beim Wegwerfen erst im Hintergrund –
+    // dann verweigert Linux das Starten der frischen Datei („Text file busy“).
+    let std_datei = aus.into_std().await;
+    let _ = std_datei.sync_all();
+    drop(std_datei);
     if let Err(e) = ergebnis {
         let _ = fs::remove_file(&part);
         return Err(e);
@@ -581,6 +585,13 @@ fn loslassen(datei: &Path, args: &[String], cwd: &Path, env: &[(&str, &Path)], e
         c
     };
     cmd.current_dir(cwd).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+    // Fehlersuche: LAUNCHER_KIND_LOG=<datei> – Ausgaben des gestarteten Programms dorthin
+    if let Some(log) = std::env::var_os("LAUNCHER_KIND_LOG").and_then(|p| fs::File::create(p).ok()) {
+        if let Ok(zweit) = log.try_clone() {
+            cmd.stdout(log).stderr(zweit);
+        }
+    }
+    umgebung_saeubern(&mut cmd);
     for k in entfernen {
         cmd.env_remove(k);
     }
@@ -589,8 +600,18 @@ fn loslassen(datei: &Path, args: &[String], cwd: &Path, env: &[(&str, &Path)], e
     }
     #[cfg(unix)]
     {
+        // Eigene Sitzung (wie setsid): Das Programm läuft weiter, wenn der
+        // Launcher sich beendet – etwa nach dem Selbst-Update.
         use std::os::unix::process::CommandExt;
-        cmd.process_group(0);
+        extern "C" {
+            fn setsid() -> i32;
+        }
+        unsafe {
+            cmd.pre_exec(|| {
+                setsid();
+                Ok(())
+            });
+        }
     }
     #[cfg(windows)]
     {
@@ -599,6 +620,34 @@ fn loslassen(datei: &Path, args: &[String], cwd: &Path, env: &[(&str, &Path)], e
         cmd.creation_flags(0x0000_0008 | 0x0000_0200);
     }
     cmd.spawn().map(|_| ())
+}
+
+/// Das AppImage des Launchers setzt beim Start Pfade in seinen eigenen,
+/// eingehängten Ordner (LD_LIBRARY_PATH, GTK_PATH, GIO_MODULE_DIR …). Ein
+/// gestartetes Programm würde sonst Bibliotheken von dort laden – und
+/// abstürzen, sobald sich der Launcher beendet. Darum alle Einträge entfernen,
+/// die in diesen Ordner (APPDIR) zeigen.
+fn umgebung_saeubern(cmd: &mut std::process::Command) {
+    let Some(appdir) = std::env::var_os("APPDIR").map(|a| a.to_string_lossy().trim_end_matches('/').to_string()) else { return };
+    if appdir.is_empty() {
+        return;
+    }
+    for (k, v) in std::env::vars_os() {
+        let wert = v.to_string_lossy();
+        if !wert.contains(&appdir) {
+            continue;
+        }
+        let rest: Vec<&str> = wert.split(':').filter(|t| !t.is_empty() && !t.starts_with(&appdir)).collect();
+        if rest.is_empty() {
+            cmd.env_remove(&k);
+        } else {
+            cmd.env(&k, rest.join(":"));
+        }
+    }
+    // Vom AppImage leer gesetzt („Custom themes are broken“) – nicht weitergeben
+    if std::env::var("GTK_THEME").map(|t| t.is_empty()).unwrap_or(false) {
+        cmd.env_remove("GTK_THEME");
+    }
 }
 
 /// Selbst-Update: neue Version neben die alte laden, starten (mit dem Pfad der
@@ -620,7 +669,8 @@ async fn selbst_update(handle: tauri::AppHandle, app: State<'_, App>) -> Result<
         return Ok(json!({ "ok": true, "datei": datei.name, "neustart": false }));
     };
     // Umgebungsvariablen der alten Datei nicht weitergeben – die neue setzt eigene.
-    let entfernen = ["PORTABLE_EXECUTABLE_FILE", "PORTABLE_EXECUTABLE_DIR", "PORTABLE_EXECUTABLE_APP_FILENAME", "APPIMAGE", "APPDIR", "ARGV0", "OWD"];
+    // ELECTRON_RUN_AS_NODE würde ältere (Electron-)Fassungen als reines Node starten.
+    let entfernen = ["PORTABLE_EXECUTABLE_FILE", "PORTABLE_EXECUTABLE_DIR", "PORTABLE_EXECUTABLE_APP_FILENAME", "APPIMAGE", "APPDIR", "ARGV0", "OWD", "ELECTRON_RUN_AS_NODE"];
     if let Err(e) = loslassen(&ziel, &[format!("{ALT_ARG}{}", eigene.to_string_lossy())], &ordner, &[], &entfernen) {
         return Ok(json!({ "ok": false, "fehler": format!("Die neue Version ließ sich nicht starten: {e}") }));
     }
@@ -693,7 +743,7 @@ async fn starten(app: State<'_, App>, id: String) -> Result<Value, ()> {
     let daten = daten_ordner(&app, &p);
     let _ = fs::create_dir_all(&daten);
     let ordner = programm_ordner(&app, &p);
-    Ok(match loslassen(&ordner.join(&v.datei), &[], &ordner, &[("LAUNCHER_DATEN_DIR", &daten)], &[]) {
+    Ok(match loslassen(&ordner.join(&v.datei), &[], &ordner, &[("LAUNCHER_DATEN_DIR", &daten)], &["ELECTRON_RUN_AS_NODE"]) {
         Ok(()) => json!({ "ok": true, "umzug": umzug }),
         Err(e) => json!({ "ok": false, "fehler": e.to_string(), "umzug": umzug }),
     })
